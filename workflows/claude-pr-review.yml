@@ -1,0 +1,106 @@
+name: Claude PR Review
+
+on:
+  # Run after CI workflow completes (only reviews if CI passes)
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+  # Manual trigger
+  workflow_dispatch:
+  # @claude mentions in PR comments
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+
+# Prevent duplicate reviews if CI reruns
+concurrency:
+  group: claude-review-${{ github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    # Run if:
+    # - Manual dispatch
+    # - @claude comment on PR (excluding bot comments to prevent loops)
+    # - CI workflow succeeded for a pull_request event
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@claude') &&
+       github.event.comment.user.login != 'github-actions[bot]') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request')
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Try different sources for PR number
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # First try the pull_requests array
+            PR_NUMBER="${{ github.event.workflow_run.pull_requests[0].number }}"
+            # If empty, resolve via commit SHA (handles cross-fork PRs)
+            if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
+              PR_NUMBER=$(gh pr list --search "${{ github.event.workflow_run.head_sha }}" --json number --jq '.[0].number')
+            fi
+          else
+            # workflow_dispatch - no PR context
+            PR_NUMBER=""
+          fi
+
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "Resolved PR number: $PR_NUMBER"
+
+      - name: Validate PR number
+        if: steps.pr.outputs.number == '' || steps.pr.outputs.number == 'null'
+        run: |
+          echo "::warning::No PR number resolved. Skipping review."
+          echo "For manual dispatch, use @claude comment on a PR instead."
+          exit 0
+
+      - name: Checkout PR branch
+        if: steps.pr.outputs.number != '' && steps.pr.outputs.number != 'null'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr checkout ${{ steps.pr.outputs.number }}
+
+      - name: Claude PR Review
+        if: steps.pr.outputs.number != '' && steps.pr.outputs.number != 'null'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.pr.outputs.number }}
+
+            Please perform a comprehensive PR review following the standards defined in .claude/commands/review_pr.md.
+
+            Read that file carefully and apply all the checks for this React/TypeScript e-commerce admin application.
+
+            First, use `gh pr diff ${{ steps.pr.outputs.number }}` to see the changes.
+            Then provide specific, actionable feedback with file:line references.
+            Focus on TypeScript type safety, React best practices, performance, accessibility, and security.
+
+            Post your review as a comment on the PR using `gh pr comment`.
+
+          # claude_args: '--model claude-3-5-sonnet-20240620 --max-turns 50 --allowedTools "Bash(gh pr:*),Bash(gh api:*),Read,Glob,Grep"'
+          claude_args: '--model claude-sonnet-4-20250514 --max-turns 50 --allowedTools "Bash,Read,Glob,Grep"'
