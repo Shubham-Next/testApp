@@ -89,18 +89,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
           prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ steps.pr.outputs.number }}
+            Review PR #${{ steps.pr.outputs.number }} in repository ${{ github.repository }}.
+            
+            **Review Guidelines**: Read .claude/commands/review_pr.md
+            
+            **Steps**:
+            1. Read the review standards file: .claude/commands/review_pr.md
+            2. Get PR changes: `gh pr diff ${{ steps.pr.outputs.number }}`
+            3. Analyze code against standards (TypeScript, React, performance, accessibility, security)
+            4. Post review comment: `gh pr comment ${{ steps.pr.outputs.number }} --body "YOUR_REVIEW_HERE"`
+            
+            Be specific with file names and line numbers in your feedback.
 
-            Please perform a comprehensive PR review following the standards defined in .claude/commands/review_pr.md. 
-
-            Read that file carefully and apply all the checks for this React/TypeScript application.
-
-            First, use `gh pr diff ${{ steps.pr.outputs.number }}` to see the changes.
-            Then provide specific, actionable feedback with file:line references.
-            Focus on TypeScript type safety, React best practices, performance, accessibility, and security.
-
-            Post your review as a comment on the PR using `gh pr comment`.
-
-          # claude_args: '--model claude-3-5-sonnet-20240620 --max-turns 50 --allowedTools "Bash(gh pr:*),Bash(gh api:*),Read,Glob,Grep"'
-          claude_args: '--model claude-sonnet-4-20250514 --max-turns 50 --allowedTools "Bash,Read,Glob,Grep"'
+          claude_args: '--model claude-sonnet-4-20250514 --max-turns 30'
