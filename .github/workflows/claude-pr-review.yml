@@ -92,9 +92,9 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.pr.outputs.number }}
 
-            Please perform a comprehensive PR review following the standards defined in .claude/commands/review_pr.md.
+            Please perform a comprehensive PR review following the standards defined in .claude/review_pr.md.
 
-            Read that file carefully and apply all the checks for this React/TypeScript e-commerce admin application.
+            Read that file carefully and apply all the checks for this React/TypeScript application.
 
             First, use `gh pr diff ${{ steps.pr.outputs.number }}` to see the changes.
             Then provide specific, actionable feedback with file:line references.
